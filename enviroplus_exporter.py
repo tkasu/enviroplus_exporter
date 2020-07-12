@@ -17,6 +17,7 @@ from periphery import Serial
 
 from bme280 import BME280
 from enviroplus import gas
+from enviroplus.noise import Noise
 from pms5003 import PMS5003, ReadTimeoutError as pmsReadTimeoutError
 
 try:
@@ -47,6 +48,7 @@ DEBUG = os.getenv('DEBUG', 'false') == 'true'
 bus = SMBus(1)
 bme280 = BME280(i2c_dev=bus)
 pms5003 = PMS5003()
+noise = Noise()
 
 TEMPERATURE = Gauge('temperature','Temperature measured (*C)')
 PRESSURE = Gauge('pressure','Pressure measured (hPa)')
@@ -60,6 +62,10 @@ PM1 = Gauge('PM1', 'Particulate Matter of diameter less than 1 micron. Measured 
 PM25 = Gauge('PM25', 'Particulate Matter of diameter less than 2.5 microns. Measured in micrograms per cubic metre (ug/m3)')
 PM10 = Gauge('PM10', 'Particulate Matter of diameter less than 10 microns. Measured in micrograms per cubic metre (ug/m3)')
 CPU_TEMPERATURE = Gauge('cpu_temperature','CPU temperature measured (*C)')
+NOISE_LOW = Gauge('noise_low','Simple profile of low frequency noise')
+NOISE_MEDIUM = Gauge('noise_medium','Simple profile of medium frequency noise')
+NOISE_HIGH = Gauge('noise_high','Simple profile of high frequency noise')
+NOISE_AMPLITUDE = Gauge('noise_amplitude','Simple profile of noise amplitude')
 
 OXIDISING_HIST = Histogram('oxidising_measurements', 'Histogram of oxidising measurements', buckets=(0, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000, 55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000, 100000))
 REDUCING_HIST = Histogram('reducing_measurements', 'Histogram of reducing measurements', buckets=(0, 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000, 1100000, 1200000, 1300000, 1400000, 1500000))
@@ -165,6 +171,18 @@ def get_particulates():
         PM25.set(pms_data.pm_ug_per_m3(2.5))
         PM10.set(pms_data.pm_ug_per_m3(10))
 
+def get_noise():
+    """
+    Get all of the noise frequency readings.
+    Bins all frequencies into 3 weighted groups expressed as a percentage of the total frequency range.
+    Values expressed as a float, 0.5 = 50%
+    """
+    low, mid, high, amp = noise.get_noise_profile()
+    NOISE_LOW.set(low*100)
+    NOISE_MEDIUM.set(mid*100)
+    NOISE_HIGH.set(high*100)
+    NOISE_AMPLITUDE.set(amp*100)
+
 def collect_all_data():
     """Collects all the data currently set"""
     sensor_data = {}
@@ -180,6 +198,10 @@ def collect_all_data():
     sensor_data['pm25'] = PM25.collect()[0].samples[0].value
     sensor_data['pm10'] = PM10.collect()[0].samples[0].value
     sensor_data['cpu_temperature'] = CPU_TEMPERATURE.collect()[0].samples[0].value
+    sensor_data['noise_low'] = NOISE_LOW.collect()[0].samples[0].value
+    sensor_data['noise_medium'] = NOISE_MEDIUM.collect()[0].samples[0].value
+    sensor_data['noise_high'] = NOISE_HIGH.collect()[0].samples[0].value
+    sensor_data['noise_amplitude'] = NOISE_AMPLITUDE.collect()[0].samples[0].value
     return sensor_data
 
 def post_to_influxdb():
@@ -365,6 +387,8 @@ def post_to_notehub():
                 data_unit = 'Lux'
             elif 'pm' in sensor_data_key:
                 data_unit = 'ug/m3'
+            elif 'noise' in sensor_data_key:
+                data_unit = '%'
             request = {'req':'note.add','body':{sensor_data_key:sensor_data[sensor_data_key], 'units':data_unit}}
             try:
                 response = card.Transaction(request)
