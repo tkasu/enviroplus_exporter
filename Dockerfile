@@ -10,4 +10,4 @@ RUN pip3 install -r requirements.txt
 
 COPY enviroplus_exporter.py .
 
-CMD python3 enviroplus_exporter.py --bind=0.0.0.0 --port=8000
+CMD python3 enviroplus_exporter.py --debug

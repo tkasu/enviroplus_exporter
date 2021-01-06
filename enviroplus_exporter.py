@@ -370,73 +370,6 @@ def post_to_influxdb():
             logging.warning("Exception sending to InfluxDB: {}".format(exception))
 
 
-def post_to_luftdaten():
-    """Post relevant sensor data to luftdaten.info"""
-    """Code from: https://github.com/sepulworld/balena-environ-plus"""
-    LUFTDATEN_SENSOR_UID = "raspi-" + get_serial_number()
-    while True:
-        time.sleep(LUFTDATEN_TIME_BETWEEN_POSTS)
-        sensor_data = collect_all_data()
-        values = {}
-        values["P2"] = sensor_data["pm25"]
-        values["P1"] = sensor_data["pm10"]
-        values["temperature"] = "{:.2f}".format(sensor_data["temperature"])
-        values["pressure"] = "{:.2f}".format(sensor_data["pressure"] * 100)
-        values["humidity"] = "{:.2f}".format(sensor_data["humidity"])
-        pm_values = dict(i for i in values.items() if i[0].startswith("P"))
-        temperature_values = dict(i for i in values.items() if not i[0].startswith("P"))
-        try:
-            response_pin_1 = requests.post(
-                "https://api.luftdaten.info/v1/push-sensor-data/",
-                json={
-                    "software_version": "enviro-plus 0.0.1",
-                    "sensordatavalues": [
-                        {"value_type": key, "value": val}
-                        for key, val in pm_values.items()
-                    ],
-                },
-                headers={
-                    "X-PIN": "1",
-                    "X-Sensor": LUFTDATEN_SENSOR_UID,
-                    "Content-Type": "application/json",
-                    "cache-control": "no-cache",
-                },
-            )
-
-            response_pin_11 = requests.post(
-                "https://api.luftdaten.info/v1/push-sensor-data/",
-                json={
-                    "software_version": "enviro-plus 0.0.1",
-                    "sensordatavalues": [
-                        {"value_type": key, "value": val}
-                        for key, val in temperature_values.items()
-                    ],
-                },
-                headers={
-                    "X-PIN": "11",
-                    "X-Sensor": LUFTDATEN_SENSOR_UID,
-                    "Content-Type": "application/json",
-                    "cache-control": "no-cache",
-                },
-            )
-
-            if response_pin_1.ok and response_pin_11.ok:
-                if DEBUG:
-                    logging.info("Luftdaten response: OK")
-            else:
-                logging.warning("Luftdaten response: Failed")
-        except Exception as exception:
-            logging.warning("Exception sending to Luftdaten: {}".format(exception))
-
-
-def get_serial_number():
-    """Get Raspberry Pi serial number to use as LUFTDATEN_SENSOR_UID"""
-    with open("/proc/cpuinfo", "r") as f:
-        for line in f:
-            if line[0:6] == "Serial":
-                return str(line.split(":")[1].strip())
-
-
 def str_to_bool(value):
     if value.lower() in {"false", "f", "0", "no", "n"}:
         return False
@@ -447,21 +380,6 @@ def str_to_bool(value):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-b",
-        "--bind",
-        metavar="ADDRESS",
-        default="0.0.0.0",
-        help="Specify alternate bind address [default: 0.0.0.0]",
-    )
-    parser.add_argument(
-        "-p",
-        "--port",
-        metavar="PORT",
-        default=8000,
-        type=int,
-        help="Specify alternate port [default: 8000]",
-    )
     parser.add_argument(
         "-f",
         "--factor",
@@ -491,18 +409,8 @@ if __name__ == "__main__":
         default="false",
         help="Post sensor data to InfluxDB [default: false]",
     )
-    parser.add_argument(
-        "-l",
-        "--luftdaten",
-        metavar="LUFTDATEN",
-        type=str_to_bool,
-        default="false",
-        help="Post sensor data to Luftdaten [default: false]",
-    )
     args = parser.parse_args()
 
-    # Start up the server to expose the metrics.
-    start_http_server(addr=args.bind, port=args.port)
     # Generate some requests.
 
     if args.debug:
@@ -525,18 +433,6 @@ if __name__ == "__main__":
         influx_thread = Thread(target=post_to_influxdb)
         influx_thread.start()
 
-    if args.luftdaten:
-        # Post to Luftdaten in another thread
-        LUFTDATEN_SENSOR_UID = "raspi-" + get_serial_number()
-        logging.info(
-            "Sensor data will be posted to Luftdaten every {} seconds for the UID {}".format(
-                LUFTDATEN_TIME_BETWEEN_POSTS, LUFTDATEN_SENSOR_UID
-            )
-        )
-        luftdaten_thread = Thread(target=post_to_luftdaten)
-        luftdaten_thread.start()
-
-    logging.info("Listening on http://{}:{}".format(args.bind, args.port))
 
     while True:
         get_temperature(args.factor)
